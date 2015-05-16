@@ -1,0 +1,72 @@
+-- MemPos.highest_prepare_id.highest_accepted_value
+datatype MemPosT = MemPos.Cn.Cn
+
+
+AccID = {1..7}
+nametype Cn = {0..5}
+
+-------------------------- CHANNELS --------------------------------
+
+channel get, set, get', set':AccID.MemPosT
+channel prepare, prepare', size_list, greatest_n:AccID.Cn
+-- promise:AccID:prepare_n:proposal_value
+channel promise, proposal:AccID.Cn.Cn
+channel reject_prepare, reject_accept, accept:AccID
+channel rnd:Cn
+
+channel add_to_list, pop_list:AccID.Cn.Cn
+
+------------------------- PROCESSOS ----------------------------------
+
+
+MEM(pos, id) = get.id!pos -> MEM(pos, id)
+	[] set.id?pos' -> MEM(pos', id)
+
+
+-- Acceptor
+PREPARE(id) = prepare.id?n -> get.id?(MemPos.high_prepare.high_value) -> 
+		if n > high_prepare 
+			then set.id!MemPos.n.high_value -> promise.id!high_prepare!high_value -> PREPARE(id)
+			else reject_prepare.id -> PREPARE(id)
+
+P = (MEM(MemPos.0.0, 1) ||| MEM(MemPos.0.0, 1)[[get <- get', set <- set']]) [| {|get, set, get', set'|} |] (PREPARE(1) ||| PREPARE(1)[[prepare <- prepare', get <- get', set <- set']])
+
+ACCEPT(id) = proposal.id?n?v -> get.id?(MemPos.high_prepare.high_value) -> 
+		if n >= high_prepare
+			then set.id!MemPos.high_prepare.v -> accept.id -> ACCEPT(id)
+			else reject_accept.id -> ACCEPT(id)
+
+
+-- Proposer
+LIST(id, <>) = add_to_list.id?n.v -> LIST(id, <n.v>) [] pop_list.id!0.0 -> LIST(id, <>) [] size_list.id!0 -> LIST(id, <>)  [] greatest_n.id!0 -> LIST(id, <>)
+LIST(id, list) = add_to_list.id?n.v -> LIST(id, <n.v>^list) [] pop_list.id!head(list) -> LIST(id, tail(list)) [] size_list.id!#list -> LIST(id, <>) [] greatest_n.id!highest_n_value(list, 0.0) -> LIST(id, <>)
+
+highest_n_value(<>, high_n.high_v) = high_v
+highest_n_value(<n.v>^list, high_n.high_v) = if n > high_n then highest_n_value(list, n.v) else highest_n_value(list, high_n.high_v)
+
+-- highest_n_value(id, highest_n, highest_v) = pop_list.id?n?v -> if n == 0 then highest_v else if n > highest_n then highest_n_value(n, v) else highest_n_value(highest_n, highest_v)
+
+RNG = |~| n:Cn @ rnd!n -> RNG
+
+BROADCAST_PREPARE(proposer_id, n) = ||| acceptor_id:AccID @ prepare.acceptor_id!n -> 
+		(promise.acceptor_id?high_prepare?high_value -> add_to_list.proposer_id!high_prepare.high_value -> SKIP 
+			[] 
+		reject_prepare.acceptor_id -> SKIP)
+
+ACCEPT_PHASE(proposer_id, n) = greatest_n.proposer_id?greatest_value -> 
+		if greatest_value == 0 
+			then rnd?random_value -> SEND_ACCEPT(proposer_id, n, random_value) 
+			else SEND_ACCEPT(proposer_id, n, greatest_value)
+
+SEND_ACCEPT(proposer_id, n, v) = ||| acceptor_id:AccID @ proposal.acceptor_id!n!v ->
+		(accept.acceptor_id -> SKIP
+			[] 
+		reject_accept.acceptor_id -> SKIP)
+
+PROPOSER(proposer_id, n) = BROADCAST_PREPARE(proposer_id, n); size_list.proposer_id?size  -> if size > card(AccID) / 2 then ACCEPT_PHASE(proposer_id, n) else PROPOSER(proposer_id, n)
+
+
+-- Proximos passos:
+-- gerar o n (o numero de cada proposer)
+-- Criar casos (processos finais, com as sincronizações e cenários)
+-- Refinamentos
