@@ -1,20 +1,37 @@
 -- MemPos.highest_prepare_id.highest_accepted_value
-datatype MemPosT = MemPos.Cn.Cn
+datatype MemPosT = MemPos.PossibleNValues.PossibleVValues
 
 
-AccID = {1..7}
-nametype Cn = {0..5}
+get_elem(<>, n) = 0
+get_elem(<a>^list, 1) = a
+get_elem(list, n) = get_elem(tail(list), n-1)
+
+AccID = {1}
+PossibleListSizeValues = {0..	card(AccID)}
+PrimesL = <2,3,7,11,13,17,19>
+nametype PossibleVValues = {0..2}
+max_n = 10
+PossibleNValues = {0..max_n}
+
+
+-- possiveis_ns = (x | (y| y E primes) x*y)
 
 -------------------------- CHANNELS --------------------------------
-
-channel get, set, get', set':AccID.MemPosT
-channel prepare, prepare', size_list, greatest_n:AccID.Cn
+-- channel get', set':AccID.MemPosT
+channel get, set:AccID.MemPosT
+-- channel prepare':AccID.PossibleVValues
+channel prepare:AccID.PossibleNValues
+channel size_list:AccID.PossibleListSizeValues
+channel greatest_n:AccID.PossibleNValues
 -- promise:AccID:prepare_n:proposal_value
-channel promise, proposal:AccID.Cn.Cn
+channel promise, proposal:AccID.PossibleNValues.PossibleVValues
 channel reject_prepare, reject_accept, accept:AccID
-channel rnd:Cn
+channel rnd:PossibleVValues
 
-channel add_to_list, pop_list:AccID.Cn.Cn
+channel add_to_list, pop_list:AccID.PossibleNValues.PossibleVValues
+channel get_n:AccID.PossibleNValues
+
+
 
 ------------------------- PROCESSOS ----------------------------------
 
@@ -29,7 +46,7 @@ PREPARE(id) = prepare.id?n -> get.id?(MemPos.high_prepare.high_value) ->
 			then set.id!MemPos.n.high_value -> promise.id!high_prepare!high_value -> PREPARE(id)
 			else reject_prepare.id -> PREPARE(id)
 
-P = (MEM(MemPos.0.0, 1) ||| MEM(MemPos.0.0, 1)[[get <- get', set <- set']]) [| {|get, set, get', set'|} |] (PREPARE(1) ||| PREPARE(1)[[prepare <- prepare', get <- get', set <- set']])
+-- P = (MEM(MemPos.0.0, 1) ||| MEM(MemPos.0.0, 1)[[get <- get', set <- set']]) [| {|get, set, get', set'|} |] (PREPARE(1) ||| PREPARE(1)[[prepare <- prepare', get <- get', set <- set']])
 
 ACCEPT(id) = proposal.id?n?v -> get.id?(MemPos.high_prepare.high_value) -> 
 		if n >= high_prepare
@@ -37,16 +54,24 @@ ACCEPT(id) = proposal.id?n?v -> get.id?(MemPos.high_prepare.high_value) ->
 			else reject_accept.id -> ACCEPT(id)
 
 
+ACCEPTOR(acceptor_id) = (PREPARE(acceptor_id) ||| ACCEPT(acceptor_id))[|{| get.acceptor_id, set.acceptor_id |}|] MEM(MemPos.0.0, acceptor_id)
+
 -- Proposer
-LIST(id, <>) = add_to_list.id?n.v -> LIST(id, <n.v>) [] pop_list.id!0.0 -> LIST(id, <>) [] size_list.id!0 -> LIST(id, <>)  [] greatest_n.id!0 -> LIST(id, <>)
-LIST(id, list) = add_to_list.id?n.v -> LIST(id, <n.v>^list) [] pop_list.id!head(list) -> LIST(id, tail(list)) [] size_list.id!#list -> LIST(id, <>) [] greatest_n.id!highest_n_value(list, 0.0) -> LIST(id, <>)
+LIST(id, <>) = add_to_list.id?n.v -> LIST(id, <n.v>) 
+	[] pop_list.id!0.0 -> LIST(id, <>) 
+	[] size_list.id!0 -> LIST(id, <>)  
+	[] greatest_n.id!0 -> LIST(id, <>)
+LIST(id, list) = add_to_list.id?n.v -> LIST(id, <n.v>^list) 
+	[] pop_list.id!head(list) -> LIST(id, tail(list)) 
+	[] size_list.id!#list -> LIST(id, <>) 
+	[] greatest_n.id!highest_n_value(list, 0.0) -> LIST(id, <>)
 
 highest_n_value(<>, high_n.high_v) = high_v
 highest_n_value(<n.v>^list, high_n.high_v) = if n > high_n then highest_n_value(list, n.v) else highest_n_value(list, high_n.high_v)
 
 -- highest_n_value(id, highest_n, highest_v) = pop_list.id?n?v -> if n == 0 then highest_v else if n > highest_n then highest_n_value(n, v) else highest_n_value(highest_n, highest_v)
 
-RNG = |~| n:Cn @ rnd!n -> RNG
+RNG = |~| n:PossibleVValues @ rnd!n -> RNG
 
 BROADCAST_PREPARE(proposer_id, n) = ||| acceptor_id:AccID @ prepare.acceptor_id!n -> 
 		(promise.acceptor_id?high_prepare?high_value -> add_to_list.proposer_id!high_prepare.high_value -> SKIP 
@@ -63,10 +88,40 @@ SEND_ACCEPT(proposer_id, n, v) = ||| acceptor_id:AccID @ proposal.acceptor_id!n!
 			[] 
 		reject_accept.acceptor_id -> SKIP)
 
-PROPOSER(proposer_id, n) = BROADCAST_PREPARE(proposer_id, n); size_list.proposer_id?size  -> if size > card(AccID) / 2 then ACCEPT_PHASE(proposer_id, n) else PROPOSER(proposer_id, n)
+NUMBER_GEN(id, prime, multiplier) = get_n.id!(prime*multiplier) ->  get_n.id!(prime*multiplier) -> if (prime*(multiplier+1) > max_n) then NUMBER_GEN(id, prime, multiplier) else NUMBER_GEN(id, prime, multiplier+1)
+
+PROPOSER(proposer_id) = get_n.proposer_id?n -> BROADCAST_PREPARE(proposer_id, n); get_n.proposer_id?n -> size_list.proposer_id?size  -> if size > card(AccID) / 2 then ACCEPT_PHASE(proposer_id, n) else PROPOSER(proposer_id)
+
+PROPOSER_MAIN(proposer_id, prime) = 
+	PROPOSER(proposer_id) 
+		[| {|add_to_list.proposer_id, pop_list.proposer_id, size_list.proposer_id, greatest_n.proposer_id, rnd, get_n.proposer_id|} |] 
+	(LIST(proposer_id, <>) ||| RNG ||| NUMBER_GEN(proposer_id, prime, 1))
+
+
+
+-- TESTING
+RUN_ACCEPTOR = ACCEPTOR(1)
+assert RUN_ACCEPTOR :[ deterministic [F]]
+assert RUN_ACCEPTOR :[ deadlock free [F]]
+assert RUN_ACCEPTOR :[ divergence free [FD]]
+
+RUN_PARALEL_ONE2ONE = ACCEPTOR(1) [| {| prepare.1, promise.1, proposal.1, reject_accept.1, reject_prepare.1, accept.1 |} |] PROPOSER_MAIN(1, 2)	
+assert RUN_PARALEL_ONE2ONE :[ deterministic [F]]
+assert RUN_PARALEL_ONE2ONE :[ deadlock free [F]]
+assert RUN_PARALEL_ONE2ONE :[ divergence free [FD]]
+
+RUN_PARALEL_MANY2ONE = (||| acceptor_id:AccID @ ACCEPTOR(acceptor_id)) [| {| prepare, promise, proposal, reject_accept, reject_prepare, accept |} |]  PROPOSER_MAIN(1, 2)
+assert RUN_PARALEL_MANY2ONE :[ deterministic [F]]
+assert RUN_PARALEL_MANY2ONE :[ deadlock free [F]]
+assert RUN_PARALEL_MANY2ONE :[ divergence free [FD]]
+
+RUN_PARALEL_MANY2MANY = (||| acceptor_id:AccID @ ACCEPTOR(acceptor_id)) [| {| prepare, promise, proposal, reject_accept, reject_prepare, accept |} |]  (||| proposer_id:AccID @ PROPOSER_MAIN(proposer_id, get_elem(PrimesL, proposer_id)))
+assert RUN_PARALEL_MANY2MANY :[ deterministic [F]]
+assert RUN_PARALEL_MANY2MANY :[ deadlock free [F]]
+assert RUN_PARALEL_MANY2MANY :[ divergence free [FD]]
 
 
 -- Proximos passos:
--- gerar o n (o numero de cada proposer)
+-- 
 -- Criar casos (processos finais, com as sincronizações e cenários)
 -- Refinamentos
