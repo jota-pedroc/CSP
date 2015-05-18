@@ -7,7 +7,7 @@ get_elem(<a>^list, 1) = a
 get_elem(list, n) = get_elem(tail(list), n-1)
 
 AccID = {1}
-PossibleListSizeValues = {0..	card(AccID)}
+PossibleListSizeValues = {0..card(AccID)}
 PrimesL = <2,3,7,11,13,17,19>
 nametype PossibleVValues = {0..2}
 max_n = 10
@@ -22,7 +22,7 @@ channel get, set:AccID.MemPosT
 -- channel prepare':AccID.PossibleVValues
 channel prepare:AccID.PossibleNValues
 channel size_list:AccID.PossibleListSizeValues
-channel greatest_n:AccID.PossibleNValues
+channel greatest_n:AccID.PossibleVValues
 -- promise:AccID:prepare_n:proposal_value
 channel promise, proposal:AccID.PossibleNValues.PossibleVValues
 channel reject_prepare, reject_accept, accept:AccID
@@ -56,15 +56,18 @@ ACCEPT(id) = proposal.id?n?v -> get.id?(MemPos.high_prepare.high_value) ->
 
 ACCEPTOR(acceptor_id) = (PREPARE(acceptor_id) ||| ACCEPT(acceptor_id))[|{| get.acceptor_id, set.acceptor_id |}|] MEM(MemPos.0.0, acceptor_id)
 
+
+test(list) = let aux = #list within if aux <= card(AccID) then aux else card(AccID)
+
 -- Proposer
 LIST(id, <>) = add_to_list.id?n.v -> LIST(id, <n.v>) 
 	[] pop_list.id!0.0 -> LIST(id, <>) 
 	[] size_list.id!0 -> LIST(id, <>)  
 	[] greatest_n.id!0 -> LIST(id, <>)
-LIST(id, list) = add_to_list.id?n.v -> LIST(id, <n.v>^list) 
+LIST(id, list) = #list < card(AccID) & add_to_list.id?n.v -> LIST(id, <n.v>^list) 
 	[] pop_list.id!head(list) -> LIST(id, tail(list)) 
-	[] size_list.id!#list -> LIST(id, <>) 
-	[] greatest_n.id!highest_n_value(list, 0.0) -> LIST(id, <>)
+	[] size_list.id!#list -> LIST(id, list) 
+	[] greatest_n.id!highest_n_value(list, 0.0) -> LIST(id, list)
 
 highest_n_value(<>, high_n.high_v) = high_v
 highest_n_value(<n.v>^list, high_n.high_v) = if n > high_n then highest_n_value(list, n.v) else highest_n_value(list, high_n.high_v)
@@ -90,7 +93,10 @@ SEND_ACCEPT(proposer_id, n, v) = ||| acceptor_id:AccID @ proposal.acceptor_id!n!
 
 NUMBER_GEN(id, prime, multiplier) = get_n.id!(prime*multiplier) ->  get_n.id!(prime*multiplier) -> if (prime*(multiplier+1) > max_n) then NUMBER_GEN(id, prime, multiplier) else NUMBER_GEN(id, prime, multiplier+1)
 
-PROPOSER(proposer_id) = get_n.proposer_id?n -> BROADCAST_PREPARE(proposer_id, n); get_n.proposer_id?n -> size_list.proposer_id?size  -> if size > card(AccID) / 2 then ACCEPT_PHASE(proposer_id, n) else PROPOSER(proposer_id)
+PROPOSER(proposer_id) = get_n.proposer_id?n -> BROADCAST_PREPARE(proposer_id, n); get_n.proposer_id?n -> size_list.proposer_id?size  ->
+	if size > card(AccID) / 2 
+		then ACCEPT_PHASE(proposer_id, n) 
+		else PROPOSER(proposer_id)
 
 PROPOSER_MAIN(proposer_id, prime) = 
 	PROPOSER(proposer_id) 
@@ -122,6 +128,6 @@ assert RUN_PARALEL_MANY2MANY :[ divergence free [FD]]
 
 
 -- Proximos passos:
--- 
+-- 	
 -- Criar casos (processos finais, com as sincronizações e cenários)
 -- Refinamentos
