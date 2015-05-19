@@ -160,4 +160,17 @@ assert RUN_PARALEL_MANY2MANY :[ divergence free [FD]]
 -- Proximos passos:
 -- 	
 -- Criar casos (processos finais, com as sincronizações e cenários)
+
+
+
 -- Refinamentos
+RNG_DET = (quit_rng -> SKIP)
+				[] 
+			([] n:PossibleVValues @ rnd!n -> RNG)
+
+
+RUN_PARALEL_ONE2ONE_DET = ACCEPTOR(1) [| {| prepare.1, promise.1, proposal.1, reject_accept.1, reject_prepare.1, accept.1 |} |] ((PROPOSER_MAIN(1, 2); quit_rng -> SKIP) [| {|rnd, quit_rng|} |] RNG_DET)
+
+assert  RUN_PARALEL_ONE2ONE [FD=  RUN_PARALEL_ONE2ONE_DET
+
+
