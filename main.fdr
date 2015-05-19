@@ -22,21 +22,24 @@ PossibleNValues = {0..max_n}
 channel get, set:AccID.MemPosT
 -- channel prepare':AccID.PossibleVValues
 channel prepare:AccID.PossibleNValues
-channel size_list:AccID.PossibleListSizeValues
 channel greatest_n:AccID.PossibleVValues
 -- promise:AccID:prepare_n:proposal_value
 channel promise, proposal:AccID.PossibleNValues.PossibleVValues
 
 channel reject_prepare, reject_accept, accept, quit_acceptor, quit_prepare, quit_mem:AccID
-channel quit, restart, quit_list, quit_ngen, quit_fallback, restart_fallback:AccID
+
+-- canais de finalização do proposer
+channel quit, restart, quit_list, quit_ngen, quit_fallback, restart_fallback:PropID
 
 channel rnd:PossibleVValues
 channel quit_rng
 
-channel add_to_list, pop_list:AccID.PossibleNValues.PossibleVValues
-channel get_n:AccID.PossibleNValues
+channel get_n:PropID.PossibleNValues
 
-
+-- canais relacionados a lista de respostas
+channel size_list:PropID.PossibleNValues
+channel reset_list:PropID
+channel add_to_list, pop_list:PropID.PossibleNValues.PossibleVValues
 
 ------------------------- PROCESSOS ----------------------------------
 
@@ -80,11 +83,13 @@ LIST(id, <>) = add_to_list.id?n.v -> LIST(id, <n.v>)
 	[] size_list.id!0 -> LIST(id, <>)  
 	[] greatest_n.id!0 -> LIST(id, <>)
 	[] quit.id -> SKIP
+	[] reset_list.id -> LIST(id, <>)
 LIST(id, list) = #list < card(AccID) & add_to_list.id?n.v -> LIST(id, <n.v>^list) 
 	[] pop_list.id!head(list) -> LIST(id, tail(list)) 
 	[] size_list.id!#list -> LIST(id, list) 
 	[] greatest_n.id!highest_n_value(list, 0.0) -> LIST(id, list)
 	[] quit.id -> SKIP
+	[] reset_list.id -> LIST(id, <>)
 
 highest_n_value(<>, high_n.high_v) = high_v
 highest_n_value(<n.v>^list, high_n.high_v) = if n > high_n then highest_n_value(list, n.v) else highest_n_value(list, high_n.high_v)
@@ -115,7 +120,7 @@ NUMBER_GEN(id, prime, multiplier) = (quit.id -> SKIP) [] get_n.id!(prime*multipl
 PROPOSER(proposer_id) = get_n.proposer_id?n -> BROADCAST_PREPARE(proposer_id, n); get_n.proposer_id?n -> size_list.proposer_id?size  ->
 	if size > card(AccID) / 2 
 		then ACCEPT_PHASE(proposer_id, n); (restart_fallback.proposer_id -> PROPOSER(proposer_id) [] quit_fallback.proposer_id -> SKIP)
-		else PROPOSER(proposer_id)
+		else reset_list.proposer_id -> PROPOSER(proposer_id)
 
 QUIT_OR_RESTART(id) =
 	quit.id -> quit_list.id -> quit_ngen.id -> quit_fallback.id -> SKIP
