@@ -162,20 +162,53 @@ assert RUN_PARALEL_MANY2MANY :[ deadlock free [F]]
 assert RUN_PARALEL_MANY2MANY :[ divergence free [FD]]
 
 
--- Proximos passos:
--- 	
--- Criar casos (processos finais, com as sincronizações e cenários)
-
-
-
 -- Refinamentos
+
+--Removendo indeterminismo
 RNG_DET = (quit_rng -> SKIP)
 				[] 
 			([] n:PossibleVValues @ rnd!n -> RNG)
-
 
 RUN_PARALEL_ONE2ONE_DET = ACCEPTOR(1) [| {| prepare.1, promise.1, proposal.1, reject_accept.1, reject_prepare.1, accept.1 |} |] ((PROPOSER_MAIN(1, 2); quit_rng -> SKIP) [| {|rnd, quit_rng|} |] RNG_DET)
 
 assert  RUN_PARALEL_ONE2ONE [FD=  RUN_PARALEL_ONE2ONE_DET
 
 
+-- Extendendo o sistema para acessar o valor de consenso
+channel accept_learner:AccID.PossibleVValues
+channel consensus:PossibleVValues
+
+datatype CountPosT = CountPos.PossibleVValues.PossibleListSizeValues
+
+add(<>, value) = <CountPos.value.1>
+add(list, value) = let CountPos.v.count = head(list) within 
+	if v == value 
+		then let n = count+1 within 
+			if n > card(AccID) then list else <CountPos.v.n>^tail(list)
+		else <CountPos.v.count>^add(tail(list), value)
+
+most_common_value(<>, value', count') = value'
+most_common_value(<CountPos.value.count>^list, value', count') = if count > count' then most_common_value(list, value, count) else most_common_value(list, value', count')
+
+
+LEARNER(count, n_received_accepts) = [] id:AccID @ accept_learner.id?value -> if n_received_accepts+1 == card(AccID) then consensus!(most_common_value(count, 0, 0)) -> SKIP else LEARNER(add(count, value), n_received_accepts+1)
+
+ACCEPT_LEARNER(id, accepted_so_far) = proposal.id?n?v -> get.id?(MemPos.high_prepare.high_value) -> 
+		if n >= high_prepare
+			then set.id!MemPos.high_prepare.v -> accept.id -> accept_learner.id!v -> if (accepted_so_far + 1) < card(PropID) then ACCEPT_LEARNER(id, accepted_so_far + 1) else quit_acceptor.id -> SKIP
+			else reject_accept.id -> ACCEPT_LEARNER(id, accepted_so_far)
+ACCEPTOR_LEARNER(acceptor_id) = 
+	(
+		(PREPARE(acceptor_id) ||| ACCEPT_LEARNER(acceptor_id, 0)) 
+			[|{| get.acceptor_id, set.acceptor_id |}|] 
+		MEM(MemPos.0.0, acceptor_id)
+	)
+		[| {quit_acceptor.acceptor_id, quit_mem.acceptor_id, quit_prepare.acceptor_id} |] 
+	QUIT_ACCEPTOR(acceptor_id)
+
+
+RUN_PARALEL_ONE2ONE_LEARNER = (ACCEPTOR_LEARNER(1) [| {|accept_learner.1|} |]  LEARNER(<>, 0) ) [| {| prepare.1, promise.1, proposal.1, reject_accept.1, reject_prepare.1, accept.1 |} |] ((PROPOSER_MAIN(1, 2); quit_rng -> SKIP) [| {|rnd, quit_rng|} |] RNG)
+
+
+assert RUN_PARALEL_ONE2ONE_LEARNER \ {| accept_learner.1, consensus |} [FD= RUN_PARALEL_ONE2ONE
+assert RUN_PARALEL_ONE2ONE [FD= RUN_PARALEL_ONE2ONE_LEARNER \ {| accept_learner.1, consensus |}
