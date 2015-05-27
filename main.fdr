@@ -133,7 +133,7 @@ PROPOSER_MAIN(proposer_id, prime) =
 			[| {quit.proposer_id, restart.proposer_id, quit_fallback.proposer_id, restart_fallback.proposer_id} |] 
 		QUIT_OR_RESTART(proposer_id)
 	)
-		[| {|add_to_list.proposer_id, pop_list.proposer_id, size_list.proposer_id, greatest_n.proposer_id, get_n.proposer_id, quit_ngen.proposer_id, quit_list.proposer_id|} |] 
+		[| {|add_to_list.proposer_id, pop_list.proposer_id, size_list.proposer_id, greatest_n.proposer_id, get_n.proposer_id, quit_ngen.proposer_id, quit_list.proposer_id, reset_list.proposer_id|} |] 
 	(
 		LIST(proposer_id, <>)[[quit <- quit_list]] 
 			|||
@@ -190,8 +190,9 @@ add(list, value) = let CountPos.v.count = head(list) within
 most_common_value(<>, value', count') = value'
 most_common_value(<CountPos.value.count>^list, value', count') = if count > count' then most_common_value(list, value, count) else most_common_value(list, value', count')
 
+-- LEARNER(count, n_received_accepts) = [] id:AccID @ accept_learner.id?value -> if n_received_accepts+1 == card(AccID) then consensus!(most_common_value(count, 0, 0)) -> SKIP else LEARNER(add(count, value), n_received_accepts+1)
 
-LEARNER(count, n_received_accepts) = [] id:AccID @ accept_learner.id?value -> if n_received_accepts+1 == card(AccID) then consensus!(most_common_value(count, 0, 0)) -> SKIP else LEARNER(add(count, value), n_received_accepts+1)
+LEARNER(count, n_received_accepts) = [] id:AccID @ if n_received_accepts == card(AccID) then consensus!(most_common_value(count, 0, 0)) -> SKIP else accept_learner.id?value -> LEARNER(add(count, value), n_received_accepts+1)
 
 ACCEPT_LEARNER(id, accepted_so_far) = proposal.id?n?v -> get.id?(MemPos.high_prepare.high_value) -> 
 		if n >= high_prepare
